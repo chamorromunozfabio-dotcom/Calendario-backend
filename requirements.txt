@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+groq
+supabase
+PyJWT
+httpx
+python-multipart
+pytest
+pytest-asyncio
+anyio

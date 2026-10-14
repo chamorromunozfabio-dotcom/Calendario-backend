@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+*.egg-info/
+
+# Entornos (nunca subir secretos)
+.env
+.env.*.local
+
+# Editor / SO
+.DS_Store
+Thumbs.db
+.vscode/*
