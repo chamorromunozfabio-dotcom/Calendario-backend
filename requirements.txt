@@ -5,6 +5,7 @@ pydantic-settings
 groq
 supabase
 PyJWT
+cryptography
 httpx
 python-multipart
 pytest

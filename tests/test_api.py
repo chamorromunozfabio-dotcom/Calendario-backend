@@ -145,3 +145,62 @@ def test_auth_required_and_delete_account():
     assert client.get("/api/v1/entries", headers=auth(u)).json()["total"] == 1
     assert client.delete("/api/v1/account", headers=auth(u)).status_code == 200
     assert client.get("/api/v1/entries", headers=auth(u)).json()["total"] == 0
+
+
+def _b64url(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def test_es256_jwks_auth(monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    import jwt as pyjwt
+
+    from app import auth as auth_module
+    from app.config import get_settings
+
+    priv = ec.generate_private_key(ec.SECP256R1())
+    pub = priv.public_key().public_numbers()
+    jwk = {
+        "kty": "EC", "crv": "P-256",
+        "x": _b64url(pub.x.to_bytes(32, "big")),
+        "y": _b64url(pub.y.to_bytes(32, "big")),
+        "kid": "test-kid",
+    }
+    monkeypatch.setattr(auth_module, "_fetch_jwks", lambda url: [jwk])
+    priv_pem = priv.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    uid = str(uuid.uuid4())
+    token = pyjwt.encode({"sub": uid}, priv_pem, algorithm="ES256", headers={"kid": "test-kid"})
+    monkeypatch.setenv("SUPABASE_URL", "https://x.supabase.co")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "")
+    get_settings.cache_clear()
+    try:
+        r = client.get("/api/v1/entries", headers=auth(token))
+        assert r.status_code == 200, r.text
+        bad = pyjwt.encode({"sub": uid}, priv_pem, algorithm="ES256", headers={"kid": "other-kid"})
+        assert client.get("/api/v1/entries", headers=auth(bad)).status_code == 401
+    finally:
+        get_settings.cache_clear()
+
+
+def test_hs256_secret_auth(monkeypatch):
+    import jwt as pyjwt
+
+    from app.config import get_settings
+
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "test-secret-32-bytes-minimum-123456")
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    get_settings.cache_clear()
+    try:
+        uid = str(uuid.uuid4())
+        token = pyjwt.encode({"sub": uid}, "test-secret-32-bytes-minimum-123456", algorithm="HS256")
+        assert client.get("/api/v1/entries", headers=auth(token)).status_code == 200
+        assert client.get("/api/v1/entries", headers=auth(uid)).status_code == 401
+    finally:
+        get_settings.cache_clear()
